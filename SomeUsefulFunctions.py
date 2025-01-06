@@ -760,7 +760,7 @@ def YoudenJScore(y_true, y_proba):
     return thresholds[idx], idx
 
 def SensitivitySpecificity(y_true, y_proba):
-    Prob_thresh = YoudenJScore(y_true, y_proba)
+    Prob_thresh,idx = YoudenJScore(y_true, y_proba)
     y_pred = (y_proba  > Prob_thresh).astype(int)
     print(y_true.astype(int))
     print(y_pred)
@@ -771,7 +771,7 @@ def SensitivitySpecificity(y_true, y_proba):
     return sensitivity, specificity
 
 def SensitivitySpecificity_noprint(y_true, y_proba):
-    Prob_thresh = YoudenJScore(y_true, y_proba)
+    Prob_thresh,idx = YoudenJScore(y_true, y_proba)
     y_pred = (y_proba  > Prob_thresh).astype(int)
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
     
@@ -780,10 +780,16 @@ def SensitivitySpecificity_noprint(y_true, y_proba):
     return sensitivity, specificity
 
 def SensitivitySpecificityExport(y_true, y_proba):
-    Prob_thresh = YoudenJScore(y_true, y_proba)
+    Prob_thresh,idx = YoudenJScore(y_true, y_proba)
     y_pred = (y_proba  > Prob_thresh).astype(int)
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
     
     sensitivity = tp/(tp + fn)
     specificity = tn/(tn + fp)
     return sensitivity, specificity
+
+
+def find_nearest(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return array[idx], idx
