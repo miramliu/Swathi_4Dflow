@@ -970,7 +970,7 @@ def Run_Logistic_Regression_delong_youden_noplot_loocv_selectFeatures(*args):
     
     # now get youden J statistic and corresponding sensitivity and specificity
     Optimal_Prob, idx = YoudenJScore(y_true, y_pred_probs)
-    sensitivity, specificity = SensitivitySpecificity(y_true, y_pred_probs)
+    sensitivity, specificity = SensitivitySpecificity_noprint(y_true, y_pred_probs)
     print('sensitivity: ', '{0:.2f}'.format(sensitivity), '\nspecificity: ', '{0:.2f}'.format(specificity), '\nYouden J stat:', '{0:.3f}'.format(Optimal_Prob))
     
 
@@ -979,14 +979,19 @@ def Run_Logistic_Regression_delong_youden_noplot_loocv_selectFeatures(*args):
 
 
 def Run_LogisticRegYouden_loocv(df, Classification_feature, All_features, Significant_features):
-    df = df.dropna(subset=[Classification_feature]) #drop nan of classification of interest 
-    for j in range(len(All_features)):
-        df = df.dropna(subset=[All_features[j]]) #drop nan of features of interest
-    df['binary feature'] = df[Classification_feature]
-    print('\nFeature selection per loop (either features with p<0.05 or lowest p-value in training set)')
-    auc, ci, sensitivity, specificity, Optimal_Prob = Run_Logistic_Regression_delong_youden_noplot_loocv(df,All_features,'binary feature','balanced')
-    print('\nSignificant Features (note this method has issues with data leakage)')
-    auc, ci, sensitivity, specificity, Optimal_Prob = Run_Logistic_Regression_delong_youden_noplot_loocv_selectFeatures(df,Significant_features,'binary feature','balanced')
+    #df_1 = df.dropna(subset=[Classification_feature]) #drop nan of classification of interest 
+    #for j in range(len(All_features)):
+        #df_1 = df_1.dropna(subset=[All_features[j]]) #drop nan of features of interest
+    #df_1['binary feature'] = df_1[Classification_feature]
+    #print('\nFeature selection per loop (either features with p<0.05 or lowest p-value in training set)')
+    #auc, ci, sensitivity, specificity, Optimal_Prob = Run_Logistic_Regression_delong_youden_noplot_loocv(df_1,All_features,'binary feature','balanced')
+    
+    print('\nTwo highest univariate  Features (note this method has issues with data leakage)')
+    df_2 = df.dropna(subset=[Classification_feature]) #drop nan of classification of interest 
+    df_2['binary feature'] = df_2[Classification_feature]
+    for j in range(len(Significant_features)):
+        df_2 = df_2.dropna(subset=[Significant_features[j]]) #drop nan of features of interest
+    auc, ci, sensitivity, specificity, Optimal_Prob = Run_Logistic_Regression_delong_youden_noplot_loocv_selectFeatures(df_2,Significant_features,'binary feature','balanced')
     
     return auc
 
