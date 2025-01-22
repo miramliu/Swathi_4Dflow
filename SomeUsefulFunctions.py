@@ -793,3 +793,200 @@ def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return array[idx], idx
+
+
+def Compare_loocv_featurepval_MINIMUM(df, Classification_feature,AllFeatures):
+    Data_Exported = Compare_loocv_featurepval(df, Classification_feature,AllFeatures)
+    for pthresh in np.linspace(0.05,1,50):
+        final_df = Compare_loocv_featurepval(df,Classification_feature,AllFeatures)
+        fig_features=(list(final_df['parameter name'].loc[final_df['p-value']<=pthresh]))
+        if len(fig_features)>0:
+            break
+    return fig_features, pthresh
+
+
+
+def Run_Logistic_Regression_delong_youden_noplot_loocv(*args):
+    if  isinstance(args[2], str):
+        df = args[0]
+        AllFeatures = args[1]
+        Classification_feature = args[2]
+        X = np.array(df[AllFeatures])
+        y = np.array(df[[Classification_feature]].values.ravel())
+    else:
+        X = args[0]
+        y = np.array(args[1].values.ravel())
+        AllFeatures = args[2]
+        X = X[AllFeatures] #choose selected features from feature selection function
+    if len(args) > 3:
+        balanced_state = args[3]
+    else:
+        balanced_state = None
+        print('just checking: class weights are not balanced')
+
+    #cross validation leave one out
+    cv = LeaveOneOut()
+    #cv = KFold(n_splits=4)
+    y_true, y_pred, y_pred_probs, fig_features = list(), list(), list(), list()
+    for train_ix, test_ix in cv.split(X):
+        # split data
+        X_train, X_test = X[train_ix, :], X[test_ix, :]
+        #print(X_train)
+        y_train, y_test = y[train_ix], y[test_ix]
+        
+        #get significant features
+        df_train = df.iloc[train_ix,:]
+        sig_feats, pvals = Compare_loocv_featurepval_MINIMUM(df_train,Classification_feature,AllFeatures)
+        #print(pvals, test_ix)
+        
+        #x split now with only the significant features FOR THIS PARTICULAR LOOP
+        X_train = np.array(df_train[sig_feats])
+        df_test = df.iloc[test_ix,:]
+        X_test = np.array(df_test[sig_feats])
+        
+        #train fit model
+        lr = LogisticRegression(solver='lbfgs', multi_class='auto',random_state = 8, class_weight = balanced_state)
+        lr.fit(X_train, y_train)
+        #evaluate
+        Y_predict = lr.predict(X_test)
+        y_pred_proba = np.array(lr.predict_proba(X_test)[::,1])
+        #store
+        y_true.extend(y_test)
+        y_pred.extend(Y_predict)
+        y_pred_probs.extend(y_pred_proba)
+        #print(y_test, Y_predict, y_pred_proba)
+
+    y_true = np.array(y_true)
+    y_pred_probs = np.array(y_pred_probs)
+    auc = metrics.roc_auc_score(y_true, y_pred_probs)
+    #print(auc)
+    auc, auc_cov = delong_roc_variance(y_true,y_pred_probs)
+    #print(auc)
+    auc_std = np.sqrt(auc_cov)
+    alpha = .95
+    lower_upper_q = np.abs(np.array([0, 1]) - (1 - alpha) / 2)
+
+    ci = stats.norm.ppf(lower_upper_q,loc=auc,scale=auc_std)
+    
+    
+    ci[ci > 1] = 1
+    guess = [.5] * len(y_pred_probs)
+    log10p = delong_roc_test(y_true,y_pred_probs,guess)[0]
+    #print(log10p)
+    pval = 10**(log10p[0])
+    ci[ci > 1] = 1
+    print('95% AUC CI:','{0:.2f}'.format(auc),'[','{0:.2f}'.format(ci[0]), ',', '{0:.2f}'.format(ci[1]),']', 'p=','{0:.3f}'.format(pval))
+    
+    # now get youden J statistic and corresponding sensitivity and specificity
+    Optimal_Prob, idx = YoudenJScore(y_true, y_pred_probs)
+    sensitivity, specificity = SensitivitySpecificity(y_true, y_pred_probs)
+    print('sensitivity: ', '{0:.2f}'.format(sensitivity), '\nspecificity: ', '{0:.2f}'.format(specificity), '\nYouden J stat:', '{0:.3f}'.format(Optimal_Prob))
+    
+
+    return auc, ci, sensitivity, specificity, Optimal_Prob
+
+
+
+def Compare_loocv_featurepval(df, Classification_feature,AllFeatures):
+    ParameterComparisonHead = ['parameter name', 'binary = 1 $\mu \pm \sigma$', 'binary = 0 $\mu \pm \sigma$', 'p-value']
+    Data_List = [[] for i in range(len(AllFeatures))]
+    group1_df = df.loc[df[Classification_feature] == 1] #for parameter j, group1. example mean f of cyst
+    group2_df = df.loc[df[Classification_feature]== 0] #for parameter j, group 2. example mean f of oncocytoma  
+    for j in range(len(AllFeatures)): #for each of the parameters
+        group1set = np.array(group1_df[AllFeatures[j]])
+        group2set = np.array(group2_df[AllFeatures[j]])
+        #removing some nan
+        group1set = group1set[~np.isnan(group1set)]
+        group2set = group2set[~np.isnan(group2set)]
+        wilcoxon = ranksums(group1set, group2set)
+        #export mean, std, and wilcoxon of the two groups for this parameter\n",
+        data_export = [AllFeatures[j], str(round(np.mean(group1set),2)) + '± ' + str(round(np.std(group1set),2)), str(round(np.mean(group2set),2)) + '± ' + str(round(np.std(group2set),2)),wilcoxon[1]]
+        Data_List[j] = data_export
+    Data_Exported = pd.DataFrame(Data_List, columns = ParameterComparisonHead)
+    return Data_Exported
+
+
+
+def Run_Logistic_Regression_delong_youden_noplot_loocv_selectFeatures(*args):
+    if  isinstance(args[2], str):
+        df = args[0]
+        AllFeatures = args[1]
+        Classification_feature = args[2]
+        X = np.array(df[AllFeatures])
+        y = np.array(df[[Classification_feature]].values.ravel())
+    else:
+        X = args[0]
+        y = np.array(args[1].values.ravel())
+        AllFeatures = args[2]
+        X = X[AllFeatures] #choose selected features from feature selection function
+    if len(args) > 3:
+        balanced_state = args[3]
+    else:
+        balanced_state = None
+        print('just checking: class weights are not balanced')
+
+    #cross validation leave one out
+    cv = LeaveOneOut()
+    #cv = KFold(n_splits=4)
+    y_true, y_pred, y_pred_probs, fig_features = list(), list(), list(), list()
+    for train_ix, test_ix in cv.split(X):
+        # split data
+        X_train, X_test = X[train_ix, :], X[test_ix, :]
+        #print(X_train)
+        y_train, y_test = y[train_ix], y[test_ix]
+        
+        #train fit model
+        lr = LogisticRegression(solver='lbfgs', multi_class='auto',random_state = 8, class_weight = balanced_state)
+        lr.fit(X_train, y_train)
+        #evaluate
+        Y_predict = lr.predict(X_test)
+        y_pred_proba = np.array(lr.predict_proba(X_test)[::,1])
+        #store
+        y_true.extend(y_test)
+        y_pred.extend(Y_predict)
+        y_pred_probs.extend(y_pred_proba)
+        #print(y_test, Y_predict, y_pred_proba)
+
+    y_true = np.array(y_true)
+    y_pred_probs = np.array(y_pred_probs)
+    auc = metrics.roc_auc_score(y_true, y_pred_probs)
+    #print(auc)
+    auc, auc_cov = delong_roc_variance(y_true,y_pred_probs)
+    #print(auc)
+    auc_std = np.sqrt(auc_cov)
+    alpha = .95
+    lower_upper_q = np.abs(np.array([0, 1]) - (1 - alpha) / 2)
+
+    ci = stats.norm.ppf(lower_upper_q,loc=auc,scale=auc_std)
+    
+    
+    ci[ci > 1] = 1
+    guess = [.5] * len(y_pred_probs)
+    log10p = delong_roc_test(y_true,y_pred_probs,guess)[0]
+    #print(log10p)
+    pval = 10**(log10p[0])
+    ci[ci > 1] = 1
+    print('95% AUC CI:','{0:.2f}'.format(auc),'[','{0:.2f}'.format(ci[0]), ',', '{0:.2f}'.format(ci[1]),']', 'p=','{0:.3f}'.format(pval))
+    
+    # now get youden J statistic and corresponding sensitivity and specificity
+    Optimal_Prob, idx = YoudenJScore(y_true, y_pred_probs)
+    sensitivity, specificity = SensitivitySpecificity(y_true, y_pred_probs)
+    print('sensitivity: ', '{0:.2f}'.format(sensitivity), '\nspecificity: ', '{0:.2f}'.format(specificity), '\nYouden J stat:', '{0:.3f}'.format(Optimal_Prob))
+    
+
+    return auc, ci, sensitivity, specificity, Optimal_Prob
+
+
+
+def Run_LogisticRegYouden_loocv(df, Classification_feature, All_features, Significant_features):
+    df = df.dropna(subset=[Classification_feature]) #drop nan of classification of interest 
+    for j in range(len(All_features)):
+        df = df.dropna(subset=[All_features[j]]) #drop nan of features of interest
+    df['binary feature'] = df[Classification_feature]
+    print('\nFeature selection per loop (either features with p<0.05 or lowest p-value in training set)')
+    auc, ci, sensitivity, specificity, Optimal_Prob = Run_Logistic_Regression_delong_youden_noplot_loocv(df,All_features,'binary feature','balanced')
+    print('\nSignificant Features (note this method has issues with data leakage)')
+    auc, ci, sensitivity, specificity, Optimal_Prob = Run_Logistic_Regression_delong_youden_noplot_loocv_selectFeatures(df,Significant_features,'binary feature','balanced')
+    
+    return auc
+
